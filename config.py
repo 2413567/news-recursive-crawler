@@ -12,13 +12,13 @@ Headers = {
 
 # {'http': 'http://localhost:2081', 'https': 'https//localhost:2081'}
 Proxy = None
-Host = 'www.zlinet.cn'
+#Host = ''
 
 # http:// or https://
 Protocol = 'http://'
 
 # save_path sqlite
-save_path = 'spider.db'
+# save_path = 'spider.db'
 
 # time_sleep
 time_sleep = 0.5
