@@ -1,8 +1,6 @@
 import time
 import os
-
 import pandas as pd
-
 import config
 import SpiderDB
 import requests
@@ -44,26 +42,25 @@ class ParseHtml:
 
 
 class SpiderGetResponse:
-    def __init__(self, url,  this_save_path):
+    def __init__(self, url,  this_db):
         self.url = url
         self.headers = config.Headers
         self.proxy = config.Proxy
-        self.this_save_path = this_save_path
+        self.this_db = this_db
         if not os.path.exists('数据'):
             os.mkdir('数据')
 
     def get_response(self, ):
-        spider_db = SpiderDB.SpiderDB(save_path=self.this_save_path)
-        row = spider_db.conn.execute(f"SELECT id FROM request_data WHERE url=?", (self.url,)).fetchone()
-        if row is not None:
+        spider_db = self.this_db
+        this_row = spider_db.conn.execute(f"SELECT id FROM request_data WHERE url=?", (self.url,)).fetchone()
+        if this_row is not None:
             # 如果已经存在，则返回对应的响应数据
-            request_id = row[0]
+            request_id = this_row[0]
             response_row = spider_db.conn.execute("SELECT content FROM response_data WHERE request_id=?",
                                                   (request_id,)).fetchone()
             if response_row is not None:
                 # 如果存在响应数据，则返回响应数据
                 content = response_row[0]
-                spider_db.close()
                 return content
         try:
             time.sleep(config.time_sleep)
@@ -71,13 +68,11 @@ class SpiderGetResponse:
             this_response.raise_for_status()
         except requests.exceptions.Timeout:
             print(f'{self.url}链接超时')
-            spider_db.close()
         except requests.exceptions.RequestException as e:
             print(f'{self.url}请求异常')
-            # 关闭数据库连接
-            spider_db.close()
-        else:
 
+        else:
+            print(self.url)
             # 将请求数据保存到request_data表格中，并获取自增id
             spider_db.insert_request_data(self.url, 'get', str(self.headers), str('params'), 'data')
             request_id = spider_db.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -92,17 +87,15 @@ class SpiderGetResponse:
                                            headers=str(this_response.headers),
                                            content=this_response.text, title=this_title, url=self.url)
             # 关闭数据库连接
-            spider_db.close()
             return this_response.text
 
 
-def get_url(this_url, this_host):
-    req = SpiderGetResponse(url=this_url, this_save_path=os.path.join('数据', this_host+'.db')).get_response()
+def get_url(this_url, this_host, db):
+    req = SpiderGetResponse(url=this_url, this_db=db).get_response()
     if not req:
         return None
     if req == '':
         return None
-    print(this_url)
     urls = ParseHtml(req).get_src()
     this_urls = list()
     for this_url_1 in urls:
@@ -131,22 +124,27 @@ def get_url(this_url, this_host):
 
 
 class Spider:
-    def __init__(self, protocol, host):
-        self.url = protocol + host
+    def __init__(self, protocol, this_host):
+        self.url = protocol + this_host
         self.protocol = protocol
-        self.host = host
+        self.host = this_host
         self.leval = config.Leval
         self.set_url = {self.url}
+        self.save_path = os.path.join('数据', self.host+'.db')
+        if not os.path.exists('数据'):
+            os.makedirs('数据')
+        self.spider = SpiderDB.SpiderDB(save_path=self.save_path)
 
     def recursion_url(self):
         self.leval -= 1
         print("目前递归层级：" + str(self.leval))
         if self.leval < 0:
+            self.spider.close()
             return
         for value in self.set_url:
             http = self.protocol
             if http in value:
-                return_set2 = get_url(value, self.host)
+                return_set2 = get_url(value, self.host, self.spider)
                 if return_set2 is None:
                     continue
                 self.set_url = self.set_url | return_set2  # 合并SET()集
@@ -154,11 +152,7 @@ class Spider:
 
 
 if __name__ == '__main__':
-    pool = ThreadPoolExecutor()
-    data = pd.read_excel("域名.xlsx")
-    for i, row in data.iterrows():
-        host = row['域名']
-        p = Spider(protocol='http://', host=host)
-        pool.submit(p.recursion_url, )
+    p = Spider(protocol='https://', this_host='www.ssydt.com')
+    p.recursion_url()
 
 
